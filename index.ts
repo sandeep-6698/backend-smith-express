@@ -3,14 +3,15 @@ import bodyParser from "body-parser";
 import morgan from "morgan";
 import http from "http";
 
+import { loadConfig } from "./app/common/helper/config.hepler";
+loadConfig(); // Need to call before all the imports
+
 import { initDB } from "./app/common/services/database.service";
 import { initPassport } from "./app/common/services/passport-jwt.service";
-import { loadConfig } from "./app/common/helper/config.hepler";
 import { type IUser } from "./app/user/user.dto";
 import errorHandler from "./app/common/middleware/error-handler.middleware";
 import routes from "./app/routes";
 
-loadConfig();
 
 declare global {
   namespace Express {
