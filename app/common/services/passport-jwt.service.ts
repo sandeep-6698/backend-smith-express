@@ -1,14 +1,18 @@
 import bcrypt from "bcrypt";
+import dayjs from "dayjs";
+import { type Request } from "express";
+import createError from "http-errors";
 import jwt from "jsonwebtoken";
 import passport from "passport";
-import { Strategy, ExtractJwt } from "passport-jwt";
+import { ExtractJwt, Strategy } from "passport-jwt";
 import { Strategy as LocalStrategy } from "passport-local";
-import createError from "http-errors";
-import * as userService from "../../user/user.service";
-import { type Request } from "express";
 import { type IUser } from "../../user/user.dto";
+import * as userService from "../../user/user.service";
 
-const isValidPassword = async function (value: string, password: string) {
+export const isValidPassword = async function (
+  value: string,
+  password: string
+) {
   const compare = await bcrypt.compare(value, password);
   return compare;
 };
@@ -40,7 +44,14 @@ export const initPassport = (): void => {
       },
       async (email, password, done) => {
         try {
-          const user = await userService.getUserByEmail(email);
+          const user = await userService.getUserByEmail(email, {
+            password: true,
+            name: true,
+            email: true,
+            active: true,
+            role: true,
+            provider: true,
+          });
           if (user == null) {
             done(createError(401, "User not found!"), false);
             return;
@@ -51,12 +62,12 @@ export const initPassport = (): void => {
             return;
           }
 
-          // if (user.blocked) {
-          //   done(createError(401, "User is blocked, Contact to admin"), false);
-          //   return;
-          // }
+          if (user.blocked) {
+            done(createError(401, "User is blocked, Contact to admin"), false);
+            return;
+          }
 
-          const validate = await isValidPassword(password, user.password);
+          const validate = await isValidPassword(password, user.password!);
           if (!validate) {
             done(createError(401, "Invalid email or password"), false);
             return;
@@ -73,12 +84,28 @@ export const initPassport = (): void => {
 
 export const createUserTokens = (user: Omit<IUser, "password">) => {
   const jwtSecret = process.env.JWT_SECRET ?? "";
-  const token = jwt.sign(user, jwtSecret);
-  return { accessToken: token, refreshToken: "" };
+  const accessToken = jwt.sign(user, jwtSecret, {
+    expiresIn: process.env.ACCESS_TOKEN_EXPIRY ?? "30m",
+  });
+  const refreshToken = jwt.sign(user, jwtSecret, {
+    expiresIn: process.env.REFRESH_TOKEN_EXPIRY ?? "2d",
+  });
+  return { accessToken, refreshToken };
 };
 
 export const decodeToken = (token: string) => {
   // const jwtSecret = process.env.JWT_SECRET ?? "";
-  const decode = jwt.decode(token);
+  const decode = jwt.decode(token) as jwt.JwtPayload;
+  const expired = dayjs.unix(decode.exp!).isBefore(dayjs());
+  return { ...decode, expired } as IUser & {
+    iat: number;
+    exp: number;
+    expired: boolean;
+  };
+};
+
+export const verifyToken = (token: string) => {
+  const jwtSecret = process.env.JWT_SECRET ?? "";
+  const decode = jwt.verify(token, jwtSecret);
   return decode as IUser;
 };
